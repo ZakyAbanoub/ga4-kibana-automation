@@ -21,3 +21,7 @@ node_modules/
 .vercel/
 dist/
 .out/
+.vercel
+
+# Local copy of the Vercel CRON_SECRET
+.cron-secret.txt
