@@ -1,0 +1,22 @@
+{
+  "name": "loquis-lastminute-automation",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Automated refresh of the Loquis x Lastminute report spreadsheet (GA4 + Kibana sources).",
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "extract": "tsx scripts/run-local.ts",
+    "refresh": "tsx scripts/refresh-local.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "google-auth-library": "^9.15.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "@vercel/node": "^5.1.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  }
+}

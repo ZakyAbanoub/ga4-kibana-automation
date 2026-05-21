@@ -1,0 +1,23 @@
+# Reference data — client file, must NOT be public
+reference-data.xlsx
+*.xlsx
+*.csv
+
+# Secrets: service-account keys, env files
+secrets/
+.env
+.env.*
+!.env.example
+
+# Ignore stray JSON (e.g. downloaded SA keys) but keep project config files
+*.json
+!package.json
+!package-lock.json
+!tsconfig.json
+!vercel.json
+
+# Build / deps / local output
+node_modules/
+.vercel/
+dist/
+.out/
