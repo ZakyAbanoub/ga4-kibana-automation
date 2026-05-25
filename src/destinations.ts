@@ -64,6 +64,7 @@ const ALIASES: Record<string, string> = {
   londra: 'London', londres: 'London',
   rom: 'Rome', roma: 'Rome',
   cipro: 'Cyprus',
+  creta: 'Crete',
   minorca: 'Menorca',
   praga: 'Prague', prag: 'Prague',
   sharmelsheikh: 'Sharm', sharmelsheikhredsea: 'Sharm',

@@ -119,8 +119,16 @@ export async function updateSummaryKpis(args: {
   const date = args.generatedAt.toLocaleDateString('en-GB', {
     day: 'numeric', month: 'short', year: 'numeric',
   });
+  // Full timestamp in the report timezone (Europe/Rome) for the "Last Update" row.
+  const lastUpdate = args.generatedAt.toLocaleString('en-GB', {
+    day: 'numeric', month: 'short', year: 'numeric',
+    hour: '2-digit', minute: '2-digit',
+    timeZone: 'Europe/Rome', hour12: false,
+  }) + ' CET/CEST';
   const updates: Array<{ a1: string; value: string | number }> = [
     { a1: 'B4', value: date },
+    { a1: 'A5', value: 'Last Update' },
+    { a1: 'B5', value: lastUpdate },
     { a1: 'E8', value: args.activeMarkets },
     { a1: 'G8', value: args.totalAudioPlays },
   ];
