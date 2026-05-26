@@ -12,6 +12,7 @@
 import { extractGa4, extractGa4MarketTotals, extractGa4DestinationTotals } from './ga4.js';
 import { extractKibana } from './kibana.js';
 import { fetchAllPages } from './wordpress.js';
+import { DESTINATION_ORDER } from './destinations.js';
 import { buildTabs, type TabPayload } from './transform.js';
 import {
   writeAllTabs,
@@ -80,6 +81,7 @@ async function writeToSpreadsheet(args: {
   reportPeriod: string;
   activeMarkets: number;
   totalAudioPlays: number;
+  totalDestinations: number;
   destinationsByLanguage?: Record<string, number>;
 }): Promise<SpreadsheetWriteResult> {
   const crmClicks = await readExistingCrmClicks(args.spreadsheetId, 'Weekly Performance Partenership');
@@ -91,6 +93,7 @@ async function writeToSpreadsheet(args: {
     reportPeriod: args.reportPeriod,
     activeMarkets: args.activeMarkets,
     totalAudioPlays: args.totalAudioPlays,
+    totalDestinations: args.totalDestinations,
     destinationsByLanguage: args.destinationsByLanguage,
   });
   return { spreadsheetId: args.spreadsheetId, rawMode: args.rawMode, tabs };
@@ -130,6 +133,9 @@ export async function runRefresh(opts: RefreshOptions = {}): Promise<RefreshResu
     ga4Market.filter((r) => r.sessions > 0).map((r) => r.market),
   ).size;
   const totalAudioPlays = kibana.reduce((s, r) => s + r.plays, 0);
+  // KEY METRICS "Destinations" universe — driven by the destination registry
+  // so adding a slug to SLUG_TO_NAME keeps A8 (and therefore % Coverage) in sync.
+  const totalDestinations = DESTINATION_ORDER.length;
   const reportPeriod = computeReportPeriod([
     ...ga4Market.map((r) => ({ isoYear: r.isoYear, isoWeek: r.isoWeek })),
     ...kibana.map((r) => ({ isoYear: r.isoYear, isoWeek: r.isoWeek })),
@@ -165,6 +171,7 @@ export async function runRefresh(opts: RefreshOptions = {}): Promise<RefreshResu
         reportPeriod,
         activeMarkets,
         totalAudioPlays,
+        totalDestinations,
         destinationsByLanguage,
       }),
     );

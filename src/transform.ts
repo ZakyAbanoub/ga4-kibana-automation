@@ -335,7 +335,9 @@ export function buildTabs(input: TransformInput): TabPayload[] {
     widgetPerformance(input.kibana),
     destinationWeek(input.ga4Detail, input.kibana),
     weeklyPerformance('Weekly Performance Partenership', input.ga4Market, input.kibana, input.crmClicks),
-    weeklyPerformance('Vista per Mercato ', input.ga4Market, input.kibana, input.crmClicks),
+    // "Vista per Mercato" used to be written here with identical content;
+    // dropped as a duplicate. See DEPRECATED_TABS in sheets.ts — the tab is
+    // also deleted from the spreadsheet on next run.
     detailByLanguage(input.ga4Destination, input.kibana),
   ];
 }

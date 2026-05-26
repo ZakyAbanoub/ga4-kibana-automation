@@ -24,6 +24,11 @@
 import { destinationFromSlug } from './destinations.js';
 
 const PER_PAGE = 100;
+/**
+ * Fields requested from WP. `parent` and `modified` are needed internally for
+ * language inference and dedup, but stripped from the response. `content`,
+ * `date`, `menu_order`, `template` etc are not fetched at all.
+ */
 const WP_FIELDS = [
   'id',
   'slug',
@@ -31,25 +36,18 @@ const WP_FIELDS = [
   'link',
   'parent',
   'status',
-  'date',
   'modified',
-  'menu_order',
-  'template',
 ] as const;
 
 const LANG_CODES = new Set(['en', 'it', 'fr', 'es', 'de']);
 
+/** Public shape of a resolved page in the /api/pages response — slim by design. */
 export interface WpPage {
   id: number;
   slug: string;
   title: string;
   link: string;
-  parent: number;
   status: string;
-  date: string | null;
-  modified: string | null;
-  menuOrder: number;
-  template: string;
   language: string;
   destination: string;
 }
@@ -81,10 +79,12 @@ interface RawWpPage {
   link: string;
   parent: number;
   status: string;
-  date?: string;
   modified?: string;
-  menu_order?: number;
-  template?: string;
+}
+
+/** Internal shape used while resolving + deduplicating — carries `modified`. */
+interface ResolvedPage extends WpPage {
+  modified: string | null;
 }
 
 /** Parse a Lastminute URL into (language, destinationSlug) — URL fallback only. */
@@ -142,7 +142,7 @@ export async function fetchAllPages(baseUrl: string): Promise<PagesResult> {
     }
   }
 
-  const resolved: WpPage[] = [];
+  const resolved: ResolvedPage[] = [];
   const unresolved: UnresolvedPage[] = [];
 
   for (const r of raw) {
@@ -165,14 +165,10 @@ export async function fetchAllPages(baseUrl: string): Promise<PagesResult> {
         slug: r.slug,
         title: r.title?.rendered ?? '',
         link: r.link,
-        parent: r.parent ?? 0,
         status: r.status,
-        date: r.date ?? null,
-        modified: r.modified ?? null,
-        menuOrder: r.menu_order ?? 0,
-        template: r.template ?? '',
         language,
         destination,
+        modified: r.modified ?? null,
       });
     } else {
       unresolved.push({
@@ -190,7 +186,7 @@ export async function fetchAllPages(baseUrl: string): Promise<PagesResult> {
   }
 
   // Deduplicate by language|destination, keeping the most recently modified.
-  const dedup = new Map<string, WpPage>();
+  const dedup = new Map<string, ResolvedPage>();
   for (const p of resolved) {
     const key = `${p.language}|${p.destination}`;
     const prev = dedup.get(key);
@@ -198,16 +194,17 @@ export async function fetchAllPages(baseUrl: string): Promise<PagesResult> {
       dedup.set(key, p);
       continue;
     }
-    const prevTs = Date.parse(prev.modified ?? prev.date ?? '');
-    const curTs = Date.parse(p.modified ?? p.date ?? '');
+    const prevTs = Date.parse(prev.modified ?? '');
+    const curTs = Date.parse(p.modified ?? '');
     if (Number.isFinite(curTs) && (!Number.isFinite(prevTs) || curTs > prevTs)) {
       dedup.set(key, p);
     }
   }
 
-  const pages = [...dedup.values()].sort(
-    (a, b) => a.language.localeCompare(b.language) || a.destination.localeCompare(b.destination),
-  );
+  // Strip the internal-only `modified` field on the way out.
+  const pages: WpPage[] = [...dedup.values()]
+    .sort((a, b) => a.language.localeCompare(b.language) || a.destination.localeCompare(b.destination))
+    .map(({ modified: _modified, ...rest }) => rest);
 
   const byLanguage: Record<string, number> = {};
   for (const p of pages) byLanguage[p.language] = (byLanguage[p.language] ?? 0) + 1;

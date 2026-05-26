@@ -22,6 +22,14 @@ const MAX_ROWS = 5000;
 /** Extra pixels added to each side of every column after autoResize. */
 const COLUMN_PADDING_PX = 18;
 
+/**
+ * Tabs the script used to own and no longer does. They get deleted from the
+ * spreadsheet on the next run so stale data can't be mistaken for live data.
+ * Note the trailing space on "Vista per Mercato " — matches the actual title
+ * as set by the original Loquis refactor.
+ */
+const DEPRECATED_TABS = new Set<string>(['Vista per Mercato ']);
+
 interface SheetMeta {
   title: string;
   sheetId: number;
@@ -150,6 +158,13 @@ export async function updateSummaryKpis(args: {
   activeMarkets: number;
   totalAudioPlays: number;
   /**
+   * Total destination universe (KEY METRICS "Destinations" cell A8). Used as
+   * the denominator for the % Coverage formula in C13:C17, so it has to track
+   * the destination registry — otherwise adding a destination silently breaks
+   * the percentages.
+   */
+  totalDestinations: number;
+  /**
    * Destination counts per language code (en/it/fr/es/de). Drives the
    * Language Availability "Destinations" column (B13..B17). Omit to leave
    * those cells untouched (e.g. when the WP fetch failed).
@@ -168,6 +183,7 @@ export async function updateSummaryKpis(args: {
     // Clear the row 5 leftover from when "Last Update" lived below "Generated".
     { a1: 'A5', value: '' },
     { a1: 'B5', value: '' },
+    { a1: 'A8', value: args.totalDestinations },
     { a1: 'E8', value: args.activeMarkets },
     { a1: 'G8', value: args.totalAudioPlays },
     // LP × Language (KEY METRICS) = sum of the per-language destination counts.
@@ -418,6 +434,14 @@ export async function writeAllTabs(
       },
     });
   }
+  // Delete any deprecated tab we used to own — keeps client spreadsheets clean
+  // when we retire a duplicate (e.g. "Vista per Mercato " was identical to
+  // "Weekly Performance Partenership").
+  for (const t of all) {
+    if (DEPRECATED_TABS.has(t.title)) {
+      formatRequests.push({ deleteSheet: { sheetId: t.sheetId } });
+    }
+  }
   if (formatRequests.length > 0) {
     await api(spreadsheetId, ':batchUpdate', {
       method: 'POST',
@@ -425,7 +449,10 @@ export async function writeAllTabs(
     });
   }
 
-  await autoResizeAll(spreadsheetId, effective, all);
+  // Exclude deprecated tabs — they were deleted in the formatRequests batch
+  // above, so their sheetId is no longer valid.
+  const surviving = all.filter((t) => !DEPRECATED_TABS.has(t.title));
+  await autoResizeAll(spreadsheetId, effective, surviving);
 
   return effective.map((p) => ({ tab: p.tab, rows: p.rows.length }));
 }
