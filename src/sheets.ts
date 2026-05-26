@@ -134,6 +134,12 @@ export async function updateSummaryKpis(args: {
   reportPeriod: string;
   activeMarkets: number;
   totalAudioPlays: number;
+  /**
+   * Destination counts per language code (en/it/fr/es/de). Drives the
+   * Language Availability "Destinations" column (B13..B17). Omit to leave
+   * those cells untouched (e.g. when the WP fetch failed).
+   */
+  destinationsByLanguage?: Record<string, number>;
 }): Promise<void> {
   const tab = 'Summary Dashboard';
   const lastUpdate = args.generatedAt.toLocaleDateString('en-GB', {
@@ -149,6 +155,20 @@ export async function updateSummaryKpis(args: {
     { a1: 'B5', value: '' },
     { a1: 'E8', value: args.activeMarkets },
     { a1: 'G8', value: args.totalAudioPlays },
+    // LP × Language (KEY METRICS) = sum of the per-language destination counts.
+    // Reflects edits in B13..B17 automatically.
+    { a1: 'C8', value: '=SUM(B13:B17)', formula: true },
+    // Language Availability — Destinations column, fed by the WP /pages API.
+    // Each cell only written when the API returned a number for that language.
+    ...(args.destinationsByLanguage
+      ? ([
+          { a1: 'B13', value: args.destinationsByLanguage.en ?? 0 },
+          { a1: 'B14', value: args.destinationsByLanguage.it ?? 0 },
+          { a1: 'B15', value: args.destinationsByLanguage.fr ?? 0 },
+          { a1: 'B16', value: args.destinationsByLanguage.es ?? 0 },
+          { a1: 'B17', value: args.destinationsByLanguage.de ?? 0 },
+        ] as Array<{ a1: string; value: string | number; formula?: boolean }>)
+      : []),
     // Language Availability — % Coverage column. Computed dynamically from
     // B<row> (destinations implemented for this language) divided by A8
     // (universe of destinations from KEY METRICS). Single-argument division

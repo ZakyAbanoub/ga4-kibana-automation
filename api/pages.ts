@@ -1,13 +1,15 @@
 /**
  * Vercel Function — GET /api/pages
  *
- * Returns every WordPress page from the Lastminute site in a single response,
- * paginated server-side past the WP API's 100-per-page cap. Each page is
- * slim-payload (no `content`) and enriched with `language` and `destination`
- * derived from its URL.
+ * Returns the canonical list of landing pages from the Lastminute site:
+ *   - filtered to URLs of shape /{lang}/{destination}/
+ *   - language resolved via the WP `parent` (Elementor convention) with URL fallback
+ *   - destination resolved via the WP `slug` (Elementor convention) with URL fallback
+ *   - deduplicated by (language, destination), most recently modified wins
  *
  * Optional auth: if PAGES_API_TOKEN is set, the request must include
- * `Authorization: Bearer <PAGES_API_TOKEN>`.
+ * `Authorization: Bearer <PAGES_API_TOKEN>`. Returns publish status only
+ * (default WP unauthenticated behaviour).
  */
 
 import type { VercelRequest, VercelResponse } from '@vercel/node';
@@ -24,14 +26,21 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
 
   try {
     const started = Date.now();
-    const pages = await fetchAllPages(WP_BASE_URL);
+    const { pages, unresolved, byLanguage, totalRaw } = await fetchAllPages(WP_BASE_URL);
     res.setHeader('Cache-Control', 'public, max-age=60, s-maxage=300');
     res.status(200).json({
       ok: true,
-      total: pages.length,
       fetchedAt: new Date().toISOString(),
       durationMs: Date.now() - started,
+      total: pages.length,
+      byLanguage,
       pages,
+      unresolved,
+      meta: {
+        totalRawFromWp: totalRaw,
+        excludedByFilter: totalRaw - pages.length - unresolved.length,
+        unresolvedCount: unresolved.length,
+      },
     });
   } catch (err) {
     console.error('pages endpoint failed', err);

@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+# Project-scoped vercel wrapper.
+#
+# Loads VERCEL_TOKEN from .env so this directory always deploys to the
+# personal account regardless of which team `vercel login` last touched.
+# direnv-equivalent for one tool — works without installing direnv.
+set -euo pipefail
+
+PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+ENV_FILE="$PROJECT_DIR/.env"
+
+if [[ -f "$ENV_FILE" ]]; then
+  set -a
+  # shellcheck disable=SC1090
+  source "$ENV_FILE"
+  set +a
+fi
+
+if [[ -z "${VERCEL_TOKEN:-}" ]]; then
+  echo "bin/vercel: VERCEL_TOKEN not set in .env" >&2
+  echo "  Create one at https://vercel.com/account/tokens (Scope: your personal account)" >&2
+  echo "  then add to .env:" >&2
+  echo "    VERCEL_TOKEN=xxxxxxxxxxxxxxxxxxxxxxxx" >&2
+  exit 1
+fi
+
+exec vercel "$@"
