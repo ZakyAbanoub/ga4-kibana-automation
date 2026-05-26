@@ -14,8 +14,10 @@ console.log(
   `  GA4: ${result.ga4DetailRows} detail / ${result.ga4MarketRows} market / ${result.ga4DestinationRows} destination`,
 );
 console.log(`  Kibana: ${result.kibanaRows} rows`);
-console.log('  Tabs written:');
-for (const t of result.tabs) console.log(`    ${t.tab.padEnd(32)} ${t.rows} rows`);
+for (const sheet of result.spreadsheets) {
+  console.log(`  Spreadsheet ${sheet.spreadsheetId} (raw=${sheet.rawMode}):`);
+  for (const t of sheet.tabs) console.log(`    ${t.tab.padEnd(32)} ${t.rows} rows`);
+}
 if (result.warnings.length) {
   console.log('  Warnings:');
   for (const w of result.warnings) console.log(`    - ${w}`);

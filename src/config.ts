@@ -2,9 +2,31 @@
 
 export const GA4_PROPERTY_ID = process.env.GA4_PROPERTY_ID ?? '482794016';
 
-/** Spreadsheet the automation writes to (our editable refactored copy). */
+/**
+ * Internal spreadsheet — receives full output (raw + presentation tabs).
+ * This is "our" copy used for auditing.
+ */
 export const SPREADSHEET_ID =
   process.env.SPREADSHEET_ID ?? '1GM3EAQgtGH93YQggku98C6SO9C_JFVaiqvyE_pAPwVA';
+
+/**
+ * Optional second spreadsheet — the client-facing copy. When set, the same
+ * refresh writes the presentation tabs to it as well, always with
+ * RAW_TABS_MODE='off' so the client never sees the raw_* audit tabs.
+ */
+export const CLIENT_SPREADSHEET_ID = process.env.CLIENT_SPREADSHEET_ID ?? '';
+
+/**
+ * Raw tab visibility for the internal spreadsheet.
+ *   hidden  — write raw_* tabs and mark them hidden (default; internal audit)
+ *   visible — write raw_* tabs and keep them visible (debug)
+ *   off     — skip raw_* tabs entirely; also hide any pre-existing raw_* tabs
+ */
+export type RawTabsMode = 'hidden' | 'visible' | 'off';
+export const RAW_TABS_MODE: RawTabsMode = (() => {
+  const v = (process.env.RAW_TABS ?? 'hidden').toLowerCase();
+  return v === 'visible' || v === 'off' ? v : 'hidden';
+})();
 
 export const KIBANA_BASE_URL = process.env.KIBANA_BASE_URL ?? 'https://stats.loquis.com';
 export const KIBANA_INDEX = process.env.KIBANA_INDEX ?? 'plays';
@@ -21,6 +43,16 @@ export const KIBANA_PASS =
 
 /** Substring identifying Lastminute plays inside Kibana `source_ref`. */
 export const KIBANA_SOURCE_REF_MATCH = 'lastminute';
+
+/** WordPress base URL for the /pages endpoint exposed at /api/pages. */
+export const WP_BASE_URL = process.env.WP_BASE_URL ?? 'https://lastminute.loquis.com';
+
+/**
+ * Optional bearer token guarding /api/pages. If unset the endpoint is public
+ * (the underlying WordPress data is already public, but a token lets the
+ * client gate consumption and rotate access).
+ */
+export const PAGES_API_TOKEN = process.env.PAGES_API_TOKEN ?? '';
 
 /**
  * Google service-account credentials.
