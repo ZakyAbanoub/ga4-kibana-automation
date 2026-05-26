@@ -88,25 +88,39 @@ async function ensureTabs(
 }
 
 /**
- * Read the "CRM Clicks" column already present in a weekly tab, keyed by
- * (market, year, week), so it survives a row reorder.
+ * Read the `Clicked` column from the manual "CRM Email Metrics" tab and key
+ * it by (market, year, week) so the weekly performance tab can join on it.
+ *
+ * CRM Email Metrics layout (manual client input):
+ *   A Market | B Week | C Year | D Delivered | E Opened | F Clicked | G Open Rate | H CTR
+ *
+ * Rows are skipped (mapping not produced) when Market / Week / Year / Clicked
+ * are missing or unparseable. Skipped rows leave the corresponding cell in
+ * Weekly Performance empty — the next run picks them up once the client fills
+ * the missing values in CRM Email Metrics.
  */
-export async function readExistingCrmClicks(
+export async function readCrmClicksFromEmailMetrics(
   spreadsheetId: string,
-  tabTitle: string,
+  tabTitle = 'CRM Email Metrics',
 ): Promise<Map<string, number>> {
   const map = new Map<string, number>();
   let data: any;
   try {
-    data = await api(spreadsheetId, `/values/${tabRange(tabTitle, 'A2:D' + MAX_ROWS)}`);
+    data = await api(spreadsheetId, `/values/${tabRange(tabTitle, 'A2:F' + MAX_ROWS)}`);
   } catch {
-    return map; // tab not present yet — nothing to preserve
+    return map; // tab missing — nothing to join
   }
   for (const row of data.values ?? []) {
-    const [market, year, week, clicks] = row;
-    if (!market || clicks === undefined || clicks === '') continue;
-    const n = Number(String(clicks).replace(',', '.'));
-    if (!Number.isNaN(n)) map.set(crmKey(market, Number(year), Number(week)), n);
+    const market = row[0];
+    const week = row[1];
+    const year = row[2];
+    const clicked = row[5];
+    if (!market || !week || !year || clicked === undefined || clicked === '') continue;
+    const w = Number(week);
+    const y = Number(year);
+    const c = Number(String(clicked).replace(',', '.'));
+    if (!Number.isFinite(w) || !Number.isFinite(y) || !Number.isFinite(c)) continue;
+    map.set(crmKey(String(market), y, w), c);
   }
   return map;
 }

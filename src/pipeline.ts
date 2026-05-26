@@ -16,7 +16,7 @@ import { DESTINATION_ORDER } from './destinations.js';
 import { buildTabs, type TabPayload } from './transform.js';
 import {
   writeAllTabs,
-  readExistingCrmClicks,
+  readCrmClicksFromEmailMetrics,
   updateSummaryKpis,
   type WriteSummary,
 } from './sheets.js';
@@ -84,7 +84,10 @@ async function writeToSpreadsheet(args: {
   totalDestinations: number;
   destinationsByLanguage?: Record<string, number>;
 }): Promise<SpreadsheetWriteResult> {
-  const crmClicks = await readExistingCrmClicks(args.spreadsheetId, 'Weekly Performance Partenership');
+  // CRM Clicks come from the client-maintained CRM Email Metrics tab.
+  // Missing rows (no Year or no Clicked) leave the corresponding Weekly
+  // Performance cell empty; next run picks them up once the client fills them.
+  const crmClicks = await readCrmClicksFromEmailMetrics(args.spreadsheetId);
   const payloads = args.payloadsFactory(crmClicks);
   const tabs = await writeAllTabs(args.spreadsheetId, payloads, args.rawMode);
   await updateSummaryKpis({
