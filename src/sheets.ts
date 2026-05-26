@@ -103,19 +103,34 @@ export async function readExistingCrmClicks(
   return map;
 }
 
-/** Write one tab: header at A1, data from A2, stale trailing rows cleared. */
-async function writeTab(spreadsheetId: string, payload: TabPayload): Promise<void> {
-  const values = [payload.header, ...payload.rows];
-  // Clear the whole data area first (covers shrinking data and changed widths).
-  await api(spreadsheetId, `/values/${tabRange(payload.tab)}:clear`, {
+/**
+ * Write every tab's values in two batched API calls instead of one-per-tab.
+ *
+ * The Sheets API caps write requests at 60/min/user. Doing 2 PUTs per tab
+ * (clear + update) for 5+ tabs quickly approaches the limit, especially when
+ * the refresh runs against multiple spreadsheets. Collapsing every clear and
+ * every update into one `values:batchClear` + one `values:batchUpdate` keeps
+ * the write count flat regardless of how many tabs we own.
+ */
+async function writeAllValues(
+  spreadsheetId: string,
+  payloads: TabPayload[],
+): Promise<void> {
+  if (payloads.length === 0) return;
+  const ranges = payloads.map((p) => `'${p.tab.replace(/'/g, "''")}'!A1:ZZ${MAX_ROWS}`);
+  await api(spreadsheetId, '/values:batchClear', {
     method: 'POST',
-    body: '{}',
+    body: JSON.stringify({ ranges }),
   });
-  await api(
-    spreadsheetId,
-    `/values/${tabRange(payload.tab, 'A1')}?valueInputOption=RAW`,
-    { method: 'PUT', body: JSON.stringify({ values }) },
-  );
+  const data = payloads.map((p) => ({
+    range: `'${p.tab.replace(/'/g, "''")}'!A1`,
+    majorDimension: 'ROWS',
+    values: [p.header, ...p.rows],
+  }));
+  await api(spreadsheetId, '/values:batchUpdate', {
+    method: 'POST',
+    body: JSON.stringify({ valueInputOption: 'RAW', data }),
+  });
 }
 
 export interface WriteSummary {
@@ -180,17 +195,30 @@ export async function updateSummaryKpis(args: {
     { a1: 'C16', value: '=B16/$A$8', formula: true },
     { a1: 'C17', value: '=B17/$A$8', formula: true },
   ];
-  for (const u of updates) {
-    const opt = u.formula ? 'USER_ENTERED' : 'RAW';
-    await api(
-      args.spreadsheetId,
-      `/values/${tabRange(tab, u.a1)}?valueInputOption=${opt}`,
-      { method: 'PUT', body: JSON.stringify({ values: [[u.value]] }) },
-    );
+  // Group by valueInputOption so each group becomes one values:batchUpdate
+  // call (instead of one PUT per cell — was 17 writes, now 2).
+  const rawData = updates
+    .filter((u) => !u.formula)
+    .map((u) => ({ range: `'${tab}'!${u.a1}`, values: [[u.value]] }));
+  const formulaData = updates
+    .filter((u) => u.formula)
+    .map((u) => ({ range: `'${tab}'!${u.a1}`, values: [[u.value]] }));
+
+  if (rawData.length > 0) {
+    await api(args.spreadsheetId, '/values:batchUpdate', {
+      method: 'POST',
+      body: JSON.stringify({ valueInputOption: 'RAW', data: rawData }),
+    });
+  }
+  if (formulaData.length > 0) {
+    await api(args.spreadsheetId, '/values:batchUpdate', {
+      method: 'POST',
+      body: JSON.stringify({ valueInputOption: 'USER_ENTERED', data: formulaData }),
+    });
   }
 
   // Apply PERCENT number format to C13:C17 so the division formula renders
-  // as "100%" instead of "1". Needs the sheetId, hence the listTabs lookup.
+  // as "100%" instead of "1". One batchUpdate, no per-cell PUT.
   const tabs = await listTabs(args.spreadsheetId);
   const summary = tabs.find((t) => t.title === tab);
   if (summary) {
@@ -217,82 +245,6 @@ export async function updateSummaryKpis(args: {
       }),
     });
   }
-}
-
-/**
- * Tile the formatting of one source column across a destination column range.
- * Used for "Widget Performance" — the tab gains a column whenever a new
- * widget type appears in Kibana, and the new columns ship unstyled. Copying
- * format from an existing numeric column (Total Audio) brings the dark-blue
- * header and Arial data styling along automatically.
- */
-async function copyColumnFormat(
-  spreadsheetId: string,
-  sheetId: number,
-  srcCol: number,
-  destStartCol: number,
-  destEndCol: number,
-  lastRow: number,
-): Promise<void> {
-  if (destEndCol <= destStartCol) return;
-  await api(spreadsheetId, ':batchUpdate', {
-    method: 'POST',
-    body: JSON.stringify({
-      requests: [
-        {
-          copyPaste: {
-            source: {
-              sheetId,
-              startRowIndex: 0, endRowIndex: lastRow,
-              startColumnIndex: srcCol, endColumnIndex: srcCol + 1,
-            },
-            destination: {
-              sheetId,
-              startRowIndex: 0, endRowIndex: lastRow,
-              startColumnIndex: destStartCol, endColumnIndex: destEndCol,
-            },
-            pasteType: 'PASTE_FORMAT',
-            pasteOrientation: 'NORMAL',
-          },
-        },
-      ],
-    }),
-  });
-}
-
-/**
- * Reset basicFilter on a presentation tab to span the freshly written data
- * with no hiddenValues. Without this the existing filter (1) keeps a stale
- * endRowIndex so newly added rows are invisible to the dropdown, and (2) can
- * keep markets hidden from a previous manual filter.
- */
-async function setFullRangeFilter(
-  spreadsheetId: string,
-  sheetId: number,
-  rows: number,
-  cols: number,
-): Promise<void> {
-  await api(spreadsheetId, ':batchUpdate', {
-    method: 'POST',
-    body: JSON.stringify({
-      requests: [
-        { clearBasicFilter: { sheetId } },
-        {
-          setBasicFilter: {
-            filter: {
-              range: {
-                sheetId,
-                startRowIndex: 0,
-                endRowIndex: rows,
-                startColumnIndex: 0,
-                endColumnIndex: cols,
-              },
-            },
-          },
-        },
-      ],
-    }),
-  });
 }
 
 /**
@@ -393,30 +345,6 @@ async function autoResizeAll(
 }
 
 /**
- * Apply the desired hidden flag to every existing raw_* tab on this sheet.
- * Used to make raw audit tabs invisible (or visible) without touching their data.
- */
-async function applyRawVisibility(
-  spreadsheetId: string,
-  allTabs: SheetMeta[],
-  hidden: boolean,
-): Promise<void> {
-  const requests = allTabs
-    .filter((t) => t.title.startsWith('raw_'))
-    .map((t) => ({
-      updateSheetProperties: {
-        properties: { sheetId: t.sheetId, hidden },
-        fields: 'hidden',
-      },
-    }));
-  if (requests.length === 0) return;
-  await api(spreadsheetId, ':batchUpdate', {
-    method: 'POST',
-    body: JSON.stringify({ requests }),
-  });
-}
-
-/**
  * Push every tab payload to the spreadsheet. Returns a per-tab row count.
  *
  * `rawMode` controls whether raw_* tabs are written and visible:
@@ -435,28 +363,69 @@ export async function writeAllTabs(
   const all = await listTabs(spreadsheetId);
   const idByTitle = new Map(all.map((t) => [t.title, t.sheetId]));
 
-  const summary: WriteSummary[] = [];
+  // Batched values write — one batchClear + one batchUpdate covers every tab.
+  await writeAllValues(spreadsheetId, effective);
+
+  // Collect every formatting request (filter resets, Widget format copy, raw
+  // visibility) into a single batchUpdate so we don't burn one API call per
+  // operation.
+  const formatRequests: object[] = [];
   for (const p of effective) {
-    await writeTab(spreadsheetId, p);
-    summary.push({ tab: p.tab, rows: p.rows.length });
-    if (!p.raw) {
-      const sheetId = idByTitle.get(p.tab);
-      if (sheetId !== undefined) {
-        const totalRows = p.rows.length + 1; // +1 for header
-        await setFullRangeFilter(spreadsheetId, sheetId, totalRows, p.header.length);
-        if (p.tab === 'Widget Performance' && p.header.length > 3) {
-          await copyColumnFormat(spreadsheetId, sheetId, 2, 3, p.header.length, totalRows);
-        }
-      }
+    if (p.raw) continue;
+    const sheetId = idByTitle.get(p.tab);
+    if (sheetId === undefined) continue;
+    const totalRows = p.rows.length + 1;
+    // Filter reset: clear + set spanning the new data with no hiddenValues.
+    formatRequests.push({ clearBasicFilter: { sheetId } });
+    formatRequests.push({
+      setBasicFilter: {
+        filter: {
+          range: {
+            sheetId,
+            startRowIndex: 0, endRowIndex: totalRows,
+            startColumnIndex: 0, endColumnIndex: p.header.length,
+          },
+        },
+      },
+    });
+    if (p.tab === 'Widget Performance' && p.header.length > 3) {
+      formatRequests.push({
+        copyPaste: {
+          source: {
+            sheetId,
+            startRowIndex: 0, endRowIndex: totalRows,
+            startColumnIndex: 2, endColumnIndex: 3,
+          },
+          destination: {
+            sheetId,
+            startRowIndex: 0, endRowIndex: totalRows,
+            startColumnIndex: 3, endColumnIndex: p.header.length,
+          },
+          pasteType: 'PASTE_FORMAT',
+          pasteOrientation: 'NORMAL',
+        },
+      });
     }
+  }
+  // Raw visibility (same batch): hide for hidden/off, show for visible.
+  const hideRaw = rawMode !== 'visible';
+  for (const t of all) {
+    if (!t.title.startsWith('raw_')) continue;
+    formatRequests.push({
+      updateSheetProperties: {
+        properties: { sheetId: t.sheetId, hidden: hideRaw },
+        fields: 'hidden',
+      },
+    });
+  }
+  if (formatRequests.length > 0) {
+    await api(spreadsheetId, ':batchUpdate', {
+      method: 'POST',
+      body: JSON.stringify({ requests: formatRequests }),
+    });
   }
 
   await autoResizeAll(spreadsheetId, effective, all);
 
-  // Raw visibility — hide for 'hidden' or 'off' (off also covers files where
-  // raw tabs already exist from a previous run); show for 'visible'.
-  const hideRaw = rawMode !== 'visible';
-  await applyRawVisibility(spreadsheetId, all, hideRaw);
-
-  return summary;
+  return effective.map((p) => ({ tab: p.tab, rows: p.rows.length }));
 }
