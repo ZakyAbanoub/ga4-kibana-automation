@@ -21,7 +21,7 @@
  * keeping the most-recently-modified one — typically the "real" landing page.
  */
 
-import { destinationFromSlug } from './destinations.js';
+import { destinationFromSlug, slugForDestination } from './destinations.js';
 
 const PER_PAGE = 100;
 /**
@@ -39,7 +39,7 @@ const WP_FIELDS = [
   'modified',
 ] as const;
 
-const LANG_CODES = new Set(['en', 'it', 'fr', 'es', 'de']);
+export const LANG_CODES = new Set(['en', 'it', 'fr', 'es', 'de']);
 
 /** Public shape of a resolved page in the /api/pages response — slim by design. */
 export interface WpPage {
@@ -49,7 +49,10 @@ export interface WpPage {
   link: string;
   status: string;
   language: string;
+  /** WP URL slug, e.g. "grancanaria". Same form accepted by ?destination=…. */
   destination: string;
+  /** Display name, e.g. "Gran Canaria". Use this in UI labels. */
+  destinationName: string;
 }
 
 export interface UnresolvedPage {
@@ -82,8 +85,19 @@ interface RawWpPage {
   modified?: string;
 }
 
-/** Internal shape used while resolving + deduplicating — carries `modified`. */
-interface ResolvedPage extends WpPage {
+/**
+ * Internal shape used while resolving + deduplicating.
+ * Holds the canonical destination name; the public WpPage shape derives both
+ * the slug and the display name from it.
+ */
+interface ResolvedPage {
+  id: number;
+  slug: string;
+  title: string;
+  link: string;
+  status: string;
+  language: string;
+  destinationCanonical: string;
   modified: string | null;
 }
 
@@ -167,7 +181,7 @@ export async function fetchAllPages(baseUrl: string): Promise<PagesResult> {
         link: r.link,
         status: r.status,
         language,
-        destination,
+        destinationCanonical: destination,
         modified: r.modified ?? null,
       });
     } else {
@@ -188,7 +202,7 @@ export async function fetchAllPages(baseUrl: string): Promise<PagesResult> {
   // Deduplicate by language|destination, keeping the most recently modified.
   const dedup = new Map<string, ResolvedPage>();
   for (const p of resolved) {
-    const key = `${p.language}|${p.destination}`;
+    const key = `${p.language}|${p.destinationCanonical}`;
     const prev = dedup.get(key);
     if (!prev) {
       dedup.set(key, p);
@@ -201,10 +215,24 @@ export async function fetchAllPages(baseUrl: string): Promise<PagesResult> {
     }
   }
 
-  // Strip the internal-only `modified` field on the way out.
+  // Emit `destination` in WP slug form (matches the ?destination= query
+  // identifier) plus `destinationName` for UI labels. Strip internals.
   const pages: WpPage[] = [...dedup.values()]
-    .sort((a, b) => a.language.localeCompare(b.language) || a.destination.localeCompare(b.destination))
-    .map(({ modified: _modified, ...rest }) => rest);
+    .sort(
+      (a, b) =>
+        a.language.localeCompare(b.language) ||
+        a.destinationCanonical.localeCompare(b.destinationCanonical),
+    )
+    .map((r) => ({
+      id: r.id,
+      slug: r.slug,
+      title: r.title,
+      link: r.link,
+      status: r.status,
+      language: r.language,
+      destination: slugForDestination(r.destinationCanonical),
+      destinationName: r.destinationCanonical,
+    }));
 
   const byLanguage: Record<string, number> = {};
   for (const p of pages) byLanguage[p.language] = (byLanguage[p.language] ?? 0) + 1;

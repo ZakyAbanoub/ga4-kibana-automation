@@ -25,3 +25,6 @@ dist/
 
 # Local copy of the Vercel CRON_SECRET
 .cron-secret.txt
+
+# Local copy of the Vercel PAGES_API_TOKEN
+.pages-api-token.txt

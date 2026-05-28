@@ -94,6 +94,24 @@ export function destinationFromSlug(slug: string): string | null {
 }
 
 /**
+ * Reverse of SLUG_TO_NAME: canonical name -> first slug that resolved to it.
+ * Lets callers (the /api/pages payload) emit the WP URL slug instead of the
+ * display name, so payload and query string use the same form.
+ */
+const NAME_TO_SLUG: Record<string, string> = (() => {
+  const m: Record<string, string> = {};
+  for (const [slug, name] of Object.entries(SLUG_TO_NAME)) {
+    if (!(name in m)) m[name] = slug;
+  }
+  return m;
+})();
+
+/** Canonical name -> URL slug (e.g. "Gran Canaria" -> "grancanaria"). */
+export function slugForDestination(name: string): string {
+  return NAME_TO_SLUG[name] ?? name.toLowerCase().replace(/\s+/g, '');
+}
+
+/**
  * Resolve a Kibana `context_ref` to a canonical destination.
  * context_ref is noisy: localized names, ` (deu)` suffixes, ` - Guida in
  * italiano` / ` - top 10` tails. Strip parentheticals, then try the whole
