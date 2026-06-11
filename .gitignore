@@ -28,3 +28,6 @@ dist/
 
 # Local copy of the Vercel PAGES_API_TOKEN
 .pages-api-token.txt
+
+# Handoff secret bundle (out-of-band, never committed)
+handoff/

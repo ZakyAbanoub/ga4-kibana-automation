@@ -4,6 +4,11 @@ Automatic nightly refresh of the Loquis × Lastminute performance spreadsheet.
 Pulls GA4 + Kibana data, writes it into the Google Sheet. CRM / client-entered
 data is never touched.
 
+> **Deploying / handing this over?** See **[`DEPLOYMENT.md`](./DEPLOYMENT.md)** —
+> recommended stack is **Vercel** (the project is two Vercel functions + a cron;
+> no DB, no AWS rebuild). It covers env vars, the Google service-account / Sheet
+> sharing, the cron secret, and a smoke test.
+
 ## What it does
 
 Every night a Vercel Cron calls `/api/refresh`, which:
